@@ -14,5 +14,7 @@ https://visualstudio.microsoft.com/downloads/
 CUDA is not fully supported past 2017, switch from Build + IntelliSense to Build Only
 
 # C_Compute launch failed: invalid configuration argument
-* Lower number of threads, my GPU has 2,176 Cores but I can only run with around 1000.
-* Use Threads in multiples of 32.
+May be a ram issue, watch the ram being used by Visual Studio if your GPU is around there that could be it.
+
+# Debug
+Use DEBUG to see Device DATA
