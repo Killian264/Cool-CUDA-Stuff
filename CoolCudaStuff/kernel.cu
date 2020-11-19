@@ -8,10 +8,10 @@
 #include <time.h>
 
 
-#define SIZE 10000
-#define THREADS 1024
+#define SIZE 2000
 
 #define debug false
+#define print_tables false
 
 
 __global__ void C_Compute(int* A, int* B, int* C) {
@@ -132,10 +132,40 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 	int* dev_x;
 	int* dev_w;
 
-	// If you have more than one gpu you're a nerd
-	cudaStatus = cudaSetDevice(0);
+	cudaDeviceProp chosen_property;
+	int nDevices;
+	cudaGetDeviceCount(&nDevices);
+	int chosen_device_number = 0;
+
+	if (debug) {
+		printf("\nUSER DEVICES:\n");
+	}
+
+	// set initial cuda device
+	cudaStatus = cudaGetDeviceProperties(&chosen_property, 0);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
+		goto Error;
+	}
+
+
+	for (int i = 0; i < nDevices; i++) {
+		cudaDeviceProp prop;
+		cudaGetDeviceProperties(&prop, i);
+
+		if (debug) {
+			printf(" Device Number: %d\n", i);
+			printf("   Device name: %s\n", prop.name);
+			printf("   Core Count #: %d\n", prop.multiProcessorCount);
+		}
+
+	}
+
+	printf("\n Choosing device #%d, | %s | %d Cores\n\n", chosen_device_number, chosen_property.name, chosen_property.multiProcessorCount);
+
+	cudaStatus = cudaSetDevice(chosen_device_number);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaSetDevice failed!");
 		goto Error;
 	}
 
@@ -187,7 +217,7 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 
 	/* DO WORK */
 	// Launch Kernel, with blocksize 1 and threads SIZE*SIZE
-	C_Compute <<<1, THREADS >>> (dev_a, dev_b, dev_c);
+	C_Compute <<<1, chosen_property.multiProcessorCount >>> (dev_a, dev_b, dev_c);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
@@ -204,7 +234,7 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 		goto Error;
 	}
 
-	W_Compute << <1, THREADS >> > (dev_c, dev_w);
+	W_Compute << <1, chosen_property.multiProcessorCount >> > (dev_c, dev_w);
 
 	// launch errors
 	cudaStatus = cudaGetLastError();
@@ -220,7 +250,7 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 		goto Error;
 	}
 
-	X_Compute << <1, THREADS >> > (dev_c, dev_x);
+	X_Compute << <1, chosen_property.multiProcessorCount >> > (dev_c, dev_x);
 
 	// launch errors
 	cudaStatus = cudaGetLastError();
@@ -272,9 +302,11 @@ int main()
 
 	clock_t start, end;
 	double time_taken;
+	clock_t start_first;
 
 	printf("Starting Malloc\n");
 	start = clock();
+	start_first = start;
 
 	int* A = (int*)malloc(SIZE * SIZE * sizeof(int));
 	int* B = (int*)malloc(SIZE * SIZE * sizeof(int));
@@ -299,7 +331,7 @@ int main()
 	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
 	printf("Ending A and B Fill %f seconds\n\n", time_taken);
 
-	printf("Starting C, W, X, work with %d threads and matrix size %d, %d.\n", THREADS, SIZE, SIZE);
+	printf("Starting C, W, X, work with matrix size %d, %d.\n", SIZE, SIZE);
 	start = clock();
 
 	//// Do WORK FAST VERY FAST
@@ -311,12 +343,12 @@ int main()
 
 	end = clock();
 	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
-	printf("Starting C, W, X, work %f seconds\n\n", time_taken);
+	printf("Ending C, W, X, work %f seconds\n\n", time_taken);
 
 	int result = R_Compute(W, X, SIZE);
 
 
-	if (debug) {
+	if (print_tables) {
 		printf("A:");
 		PrintArray(A, SIZE);
 
@@ -332,8 +364,12 @@ int main()
 		printf("X:");
 		PrintArraySingle(X, SIZE);
 	}
+	end = clock();
+	time_taken = ((double)end - start_first) / CLOCKS_PER_SEC;
+	printf("Ending Program Total Time Taken: %f seconds\n\n", time_taken);
 
 	printf("RESULT: %d", result);
+
 
     // cudaDeviceReset must be called before exiting in order for profiling and
     // tracing tools such as Nsight and Visual Profiler to show complete traces.
