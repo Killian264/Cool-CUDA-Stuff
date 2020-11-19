@@ -5,10 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <curand.h>
+#include <time.h>
 
 
 #define SIZE 10000
-#define THREADS 1000
+#define THREADS 1024
 
 #define debug false
 
@@ -124,7 +125,6 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 
 	cudaError_t cudaStatus = cudaSuccess;
 
-	
 	// CUDA arrays
 	int* dev_a;
 	int* dev_b;
@@ -270,7 +270,11 @@ int main()
 {
 	srand(0);
 
-    int ret = 0;
+	clock_t start, end;
+	double time_taken;
+
+	printf("Starting Malloc\n");
+	start = clock();
 
 	int* A = (int*)malloc(SIZE * SIZE * sizeof(int));
 	int* B = (int*)malloc(SIZE * SIZE * sizeof(int));
@@ -280,10 +284,23 @@ int main()
 
 	int* W = (int*)malloc(SIZE * sizeof(int));
 
+	end = clock();
+	time_taken = ((double)end-start) / CLOCKS_PER_SEC;
+	printf("Ending Malloc %f seconds\n\n", time_taken);
+
+	printf("Starting A and B Fill\n");
+	start = clock();
+
 	FillArray(A, SIZE);
 
 	FillArray(B, SIZE);
 
+	end = clock();
+	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
+	printf("Ending A and B Fill %f seconds\n\n", time_taken);
+
+	printf("Starting C, W, X, work with %d threads and matrix size %d, %d.\n", THREADS, SIZE, SIZE);
+	start = clock();
 
 	//// Do WORK FAST VERY FAST
     cudaError_t cudaStatus = doWork(A, B, C, X, W);
@@ -292,8 +309,12 @@ int main()
         return 1;
     }
 
+	end = clock();
+	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
+	printf("Starting C, W, X, work %f seconds\n\n", time_taken);
 
 	int result = R_Compute(W, X, SIZE);
+
 
 	if (debug) {
 		printf("A:");
