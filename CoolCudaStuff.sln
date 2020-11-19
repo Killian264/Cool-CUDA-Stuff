@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29411.108
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CoolCudaStuff", "CoolCudaStuff\CoolCudaStuff.vcxproj", "{01EAEAB8-A147-4E4A-A5B3-C04A99409F67}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{01EAEAB8-A147-4E4A-A5B3-C04A99409F67}.Debug|x64.ActiveCfg = Debug|x64
+		{01EAEAB8-A147-4E4A-A5B3-C04A99409F67}.Debug|x64.Build.0 = Debug|x64
+		{01EAEAB8-A147-4E4A-A5B3-C04A99409F67}.Release|x64.ActiveCfg = Release|x64
+		{01EAEAB8-A147-4E4A-A5B3-C04A99409F67}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2D2C4AD6-4265-48FD-AB8A-0A901284F618}
+	EndGlobalSection
+EndGlobal
