@@ -8,10 +8,10 @@
 #include <time.h>
 
 
-#define SIZE 2000
+#define SIZE 4
 
 #define debug false
-#define print_tables false
+#define print_tables true
 
 
 __global__ void C_Compute(int* A, int* B, int* C) {
@@ -119,19 +119,7 @@ void PrintArray(int* arr, int size) {
 	printf("\n");
 }
 
-// Does CUDA work
-cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
-{
-
-	cudaError_t cudaStatus = cudaSuccess;
-
-	// CUDA arrays
-	int* dev_a;
-	int* dev_b;
-	int* dev_c;
-	int* dev_x;
-	int* dev_w;
-
+bool ChooseDevice(cudaDeviceProp* chosen_out, int* chosen_number_out) {
 	cudaDeviceProp chosen_property;
 	int nDevices;
 	cudaGetDeviceCount(&nDevices);
@@ -142,10 +130,10 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 	}
 
 	// set initial cuda device
-	cudaStatus = cudaGetDeviceProperties(&chosen_property, 0);
+	cudaError_t cudaStatus = cudaGetDeviceProperties(&chosen_property, 0);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-		goto Error;
+		return false;
 	}
 
 
@@ -163,6 +151,61 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 
 	printf("\n Choosing device #%d, | %s | %d Cores\n\n", chosen_device_number, chosen_property.name, chosen_property.multiProcessorCount);
 
+	*chosen_number_out = chosen_device_number;
+	*chosen_out = chosen_property;
+
+	return true;
+}
+
+bool HandleRunErrors() {
+	// Check for any errors launching the kernel
+	cudaError_t cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		printf("C_Compute launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		return false;
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	cudaStatus = cudaDeviceSynchronize();
+	// any errors encountered during the launch.
+	if (cudaStatus != cudaSuccess) {
+		printf("cudaDeviceSynchronize returned error code %d C_Compute!\n", cudaStatus);
+		return false;
+	}
+	return true;
+}
+
+// Does CUDA work
+cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
+{
+
+	cudaError_t cudaStatus = cudaSuccess;
+
+	// CUDA arrays
+	int* dev_a = nullptr;
+	int* dev_b = nullptr;
+	int* dev_c = nullptr;
+	int* dev_x = nullptr;
+	int* dev_w = nullptr;
+
+	int single_size = SIZE * sizeof(int);
+	int matrix_size = SIZE * single_size;
+
+	int num_arrays = 5;
+	int** in[] = { &dev_a, &dev_b, &dev_c, &dev_w, &dev_x };
+	int** out[] = { &A, &B, &C, &W, &X };
+	int size[] = { matrix_size, matrix_size, matrix_size, single_size, single_size };
+	char letters[] = { 'A' , 'B', 'C', 'W', 'X' };
+
+	/* CHOOSE DEVICE */
+	cudaDeviceProp chosen_property;
+	int chosen_device_number;
+	bool device_found = ChooseDevice(&chosen_property, &chosen_device_number);
+
+	if (!device_found) {
+		goto Error;
+	}
+
 	cudaStatus = cudaSetDevice(chosen_device_number);
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaSetDevice failed!");
@@ -170,35 +213,12 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 	}
 
 	/* ALLOCATE DATA */
-	// allocate gpu buffer
-	cudaStatus = cudaMalloc(&dev_c, SIZE * SIZE * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaMalloc A failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc(&dev_a, SIZE * SIZE * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaMalloc B failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc(&dev_b, SIZE * SIZE * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaMalloc C failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc(&dev_x, SIZE * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaMalloc X failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc(&dev_w,  SIZE * sizeof(int));
-	if (cudaStatus != cudaSuccess) {
-		printf("cudaMalloc W failed!");
-		goto Error;
+	for (int i = 0; i < num_arrays; i++) {
+		cudaStatus = cudaMalloc(in[i], size[i]);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaMalloc %c failed!", letters[i]);
+			goto Error;
+		}
 	}
 
 	/* DATA COPY */
@@ -215,80 +235,48 @@ cudaError_t doWork(int* A, int* B, int* C, int* X, int* W)
 		goto Error;
 	}
 
+	bool ran;
+
 	/* DO WORK */
 	// Launch Kernel, with blocksize 1 and threads SIZE*SIZE
 	C_Compute <<<1, chosen_property.multiProcessorCount >>> (dev_a, dev_b, dev_c);
 
-	// Check for any errors launching the kernel
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "C_Compute launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
+	ran = HandleRunErrors();
 
-	// cudaDeviceSynchronize waits for the kernel to finish, and returns
-	cudaStatus = cudaDeviceSynchronize();
-	// any errors encountered during the launch.
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d C_Compute!\n", cudaStatus);
+	if (!ran) {
 		goto Error;
 	}
 
 	W_Compute << <1, chosen_property.multiProcessorCount >> > (dev_c, dev_w);
 
-	// launch errors
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "W_Compute launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		goto Error;
-	}
+	ran = HandleRunErrors();
 
-	// sync errors
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d W_Compute!\n", cudaStatus);
+	if (!ran) {
 		goto Error;
 	}
 
 	X_Compute << <1, chosen_property.multiProcessorCount >> > (dev_c, dev_x);
 
-	// launch errors
-	cudaStatus = cudaGetLastError();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "X_Compute launch failed: %s\n", cudaGetErrorString(cudaStatus));
+	ran = HandleRunErrors();
+
+	if (!ran) {
 		goto Error;
 	}
 
-	// sync errors
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d X_Compute!\n", cudaStatus);
-		goto Error;
-	}
-
-	/* COPY OUT DATA */
-	// Copy output vector from GPU buffer to host memory.
-	cudaStatus = cudaMemcpy(C, dev_c, SIZE * SIZE * sizeof(int), cudaMemcpyDeviceToHost);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy C failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMemcpy(W, dev_w, SIZE * sizeof(int), cudaMemcpyDeviceToHost);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy W failed!");
-		goto Error;
-	}
-
-	cudaStatus = cudaMemcpy(X, dev_x, SIZE * sizeof(int), cudaMemcpyDeviceToHost);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMemcpy X failed!");
-		goto Error;
+	/* COPY DATA BACK TO CPU */
+	for (int i = 2; i < 5; i++) {
+		cudaStatus = cudaMemcpy(*(out[i]), *(in[i]), size[i], cudaMemcpyDeviceToHost);
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaMemcpy %c failed!", letters[i]);
+			goto Error;
+		}
 	}
 
 // craziest thing i've ever seen
 // i like it
 Error:
+	cudaFree(dev_a);
+	cudaFree(dev_b);
 	cudaFree(dev_c);
 	cudaFree(dev_a);
 	cudaFree(dev_b);
@@ -304,6 +292,7 @@ int main()
 	double time_taken;
 	clock_t start_first;
 
+	/* MALLOC */
 	printf("Starting Malloc\n");
 	start = clock();
 	start_first = start;
@@ -320,6 +309,8 @@ int main()
 	time_taken = ((double)end-start) / CLOCKS_PER_SEC;
 	printf("Ending Malloc %f seconds\n\n", time_taken);
 
+
+	/* FILL */
 	printf("Starting A and B Fill\n");
 	start = clock();
 
@@ -331,10 +322,11 @@ int main()
 	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
 	printf("Ending A and B Fill %f seconds\n\n", time_taken);
 
+
+	/* CUDA WORK */
 	printf("Starting C, W, X, work with matrix size %d, %d.\n", SIZE, SIZE);
 	start = clock();
 
-	//// Do WORK FAST VERY FAST
     cudaError_t cudaStatus = doWork(A, B, C, X, W);
     if (cudaStatus != cudaSuccess) {
         printf("Cuda failed!");
@@ -345,6 +337,7 @@ int main()
 	time_taken = ((double)end - start) / CLOCKS_PER_SEC;
 	printf("Ending C, W, X, work %f seconds\n\n", time_taken);
 
+	/* RESULTS */
 	int result = R_Compute(W, X, SIZE);
 
 
@@ -369,6 +362,13 @@ int main()
 	printf("Ending Program Total Time Taken: %f seconds\n\n", time_taken);
 
 	printf("RESULT: %d", result);
+
+	// Free Data
+	free(A);
+	free(B);
+	free(C);
+	free(X);
+	free(W);
 
 
     // cudaDeviceReset must be called before exiting in order for profiling and
